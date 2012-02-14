@@ -3,7 +3,7 @@
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
  */
-package cascading.dbmigrate.hadoop;
+package cascading.mongomigrate.hadoop;
 
 import cascading.tuple.Tuple;
 import org.apache.hadoop.io.BytesWritable;
@@ -20,9 +20,9 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.*;
 
-public class DBInputFormat implements InputFormat<LongWritable, TupleWrapper> {
+public class MongoInputFormat implements InputFormat<LongWritable, TupleWrapper> {
 
-    private static final Logger LOG = LoggerFactory.getLogger(DBInputFormat.class);
+    private static final Logger LOG = LoggerFactory.getLogger(MongoInputFormat.class);
 
     public static class DBRecordReader implements RecordReader<LongWritable, TupleWrapper> {
 
@@ -35,7 +35,7 @@ public class DBInputFormat implements InputFormat<LongWritable, TupleWrapper> {
         protected DBRecordReader(DBInputSplit split, JobConf job) throws IOException {
             try {
                 this.split = split;
-                DBConfiguration conf = new DBConfiguration(job);
+                MongoConfiguration conf = new MongoConfiguration(job);
                 connection = conf.getConnection();
 
                 statement = connection
@@ -66,7 +66,7 @@ public class DBInputFormat implements InputFormat<LongWritable, TupleWrapper> {
             return ret;
         }
 
-        protected String getSelectQuery(DBConfiguration conf, DBInputSplit split) {
+        protected String getSelectQuery(MongoConfiguration conf, DBInputSplit split) {
             StringBuilder query = new StringBuilder();
             query.append("SELECT ");
             query.append(join(conf.getInputColumnNames(), ","));
@@ -184,7 +184,7 @@ public class DBInputFormat implements InputFormat<LongWritable, TupleWrapper> {
         return new DBRecordReader((DBInputSplit) split, job);
     }
 
-    private long getMaxId(DBConfiguration conf, Connection conn, String tableName, String col) {
+    private long getMaxId(MongoConfiguration conf, Connection conn, String tableName, String col) {
         if (conf.getMaxId() != null) {
             return conf.getMaxId();
         }
@@ -202,7 +202,7 @@ public class DBInputFormat implements InputFormat<LongWritable, TupleWrapper> {
         }
     }
 
-    private long getMinId(DBConfiguration conf, Connection conn, String tableName, String col) {
+    private long getMinId(MongoConfiguration conf, Connection conn, String tableName, String col) {
         if (conf.getMinId() != null) {
             return conf.getMinId();
         }
@@ -222,7 +222,7 @@ public class DBInputFormat implements InputFormat<LongWritable, TupleWrapper> {
 
     public InputSplit[] getSplits(JobConf job, int ignored) throws IOException {
         try {
-            DBConfiguration conf = new DBConfiguration(job);
+            MongoConfiguration conf = new MongoConfiguration(job);
             int chunks = conf.getNumChunks();
             Connection conn = conf.getConnection();
             String primarykeycolumn = conf.getPrimaryKeyColumn();
@@ -249,9 +249,9 @@ public class DBInputFormat implements InputFormat<LongWritable, TupleWrapper> {
     public static void setInput(JobConf job, int numChunks, String databaseDriver, String username,
         String pwd, String dburl, String tableName, String pkColumn, Long minId, Long maxId,
         String... columnNames) {
-        job.setInputFormat(DBInputFormat.class);
+        job.setInputFormat(MongoInputFormat.class);
 
-        DBConfiguration dbConf = new DBConfiguration(job);
+        MongoConfiguration dbConf = new MongoConfiguration(job);
         dbConf.configureDB(databaseDriver, dburl, username, pwd);
         if (minId != null) {
             dbConf.setMinId(minId.longValue());
