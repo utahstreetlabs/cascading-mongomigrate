@@ -8,27 +8,27 @@ package cascading.mongomigrate.hadoop;
 
 import org.apache.hadoop.mapred.JobConf;
 
+import com.mongodb.DB;
+import com.mongodb.Mongo;
+
 import java.io.IOException;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.SQLException;
+import java.net.UnknownHostException;
 
 public class MongoConfiguration {
 
-    public static final String DRIVER_CLASS_PROPERTY = "mapred.jdbc.driver.class";
-    public static final String URL_PROPERTY = "mapred.jdbc.url";
-    public static final String USERNAME_PROPERTY = "mapred.jdbc.username";
-    public static final String PASSWORD_PROPERTY = "mapred.jdbc.password";
-    public static final String INPUT_TABLE_NAME_PROPERTY = "mapred.jdbc.input.table.name";
-    public static final String INPUT_COLUMN_NAMES_PROPERTY = "mapred.jdbc.input.column.names";
-    public static final String PRIMARY_KEY_COLUMN = "mapred.jdbc.primary.key.name";
-    public static final String NUM_CHUNKS = "mapred.jdbc.num.chunks";
-    public static final String MIN_ID = "mongomigrate.min.id";
-    public static final String MAX_ID = "mongomigrate.max.id";
+    public static final String HOST_PROPERTY = "mapred.mongo.host";
+    public static final String PORT_PROPERTY = "mapred.mongo.port";
+    public static final String USERNAME_PROPERTY = "mapred.mongo.username";
+    public static final String PASSWORD_PROPERTY = "mapred.mongo.password";
+    public static final String INPUT_DB_NAME_PROPERTY = "mapred.mongo.input.db.name";
+    public static final String INPUT_COLLECTION_NAME_PROPERTY = "mapred.mongo.input.collection.name";
+    public static final String INPUT_FIELD_NAMES_PROPERTY = "mapred.mongo.input.field.names";
+    public static final String PRIMARY_KEY_FIELD = "mapred.mongo.primary.key.name";
+    public static final String NUM_CHUNKS = "mapred.mongo.num.chunks";
 
-    public void configureDB(String driverClass, String dbUrl, String userName, String passwd) {
-        job.set(DRIVER_CLASS_PROPERTY, driverClass);
-        job.set(URL_PROPERTY, dbUrl);
+    public void configureMongo(String host, int port, String userName, String passwd) {
+        job.set(HOST_PROPERTY, host);
+        job.setInt(PORT_PROPERTY, port);
 
         if (userName != null) {
             job.set(USERNAME_PROPERTY, userName);
@@ -39,8 +39,8 @@ public class MongoConfiguration {
         }
     }
 
-    public void configureDB(String driverClass, String dbUrl) {
-        configureDB(driverClass, dbUrl, null, null);
+    public void configureMongo(String host, int port) {
+        configureMongo(host, port, null, null);
     }
 
     public JobConf job;
@@ -49,50 +49,52 @@ public class MongoConfiguration {
         this.job = job;
     }
 
-    public Connection getConnection() throws IOException {
+    public Mongo getMongo() throws IOException {
         try {
-            Class.forName(job.get(MongoConfiguration.DRIVER_CLASS_PROPERTY));
-        } catch (ClassNotFoundException exception) {
-            throw new IOException("unable to load conection driver", exception);
-        }
-        Connection ret;
-
-        try {
-            if (job.get(MongoConfiguration.USERNAME_PROPERTY) == null) {
-                ret = DriverManager.getConnection(job.get(MongoConfiguration.URL_PROPERTY));
-            } else {
-                ret = DriverManager.getConnection(job.get(MongoConfiguration.URL_PROPERTY), job
-                    .get(MongoConfiguration.USERNAME_PROPERTY), job
-                    .get(MongoConfiguration.PASSWORD_PROPERTY));
-            }
-            return ret;
-        } catch (SQLException exception) {
-            throw new IOException("unable to create connection", exception);
+            return new Mongo(job.get(MongoConfiguration.HOST_PROPERTY), job.getInt(MongoConfiguration.PORT_PROPERTY, 27017));
+        } catch (UnknownHostException e) {
+            throw new IOException("unable to connect to mongo", e);
         }
     }
 
-    public String getInputTableName() {
-        return job.get(MongoConfiguration.INPUT_TABLE_NAME_PROPERTY);
+    public DB getDB() throws IOException {
+        DB db = getMongo().getDB(job.get(MongoConfiguration.INPUT_DB_NAME_PROPERTY));
+        String username = job.get(MongoConfiguration.USERNAME_PROPERTY);
+        String password = job.get(MongoConfiguration.USERNAME_PROPERTY);
+        if (username != null && password != null) db.authenticate(username, password.toCharArray());
+        return db;
     }
 
-    public void setInputTableName(String tableName) {
-        job.set(MongoConfiguration.INPUT_TABLE_NAME_PROPERTY, tableName);
+    public String getDBName() {
+        return job.get(MongoConfiguration.INPUT_DB_NAME_PROPERTY);
     }
 
-    public String[] getInputColumnNames() {
-        return job.getStrings(MongoConfiguration.INPUT_COLUMN_NAMES_PROPERTY);
+    public void setDBName(String dbName) {
+        job.set(MongoConfiguration.INPUT_DB_NAME_PROPERTY, dbName);
     }
 
-    public void setInputColumnNames(String... fieldNames) {
-        job.setStrings(MongoConfiguration.INPUT_COLUMN_NAMES_PROPERTY, fieldNames);
+    public String getInputCollectionName() {
+        return job.get(MongoConfiguration.INPUT_COLLECTION_NAME_PROPERTY);
     }
 
-    public String getPrimaryKeyColumn() {
-        return job.get(PRIMARY_KEY_COLUMN);
+    public void setInputCollectionName(String collectionName) {
+        job.set(MongoConfiguration.INPUT_COLLECTION_NAME_PROPERTY, collectionName);
     }
 
-    public void setPrimaryKeyColumn(String key) {
-        job.set(PRIMARY_KEY_COLUMN, key);
+    public String[] getInputFieldNames() {
+        return job.getStrings(MongoConfiguration.INPUT_FIELD_NAMES_PROPERTY);
+    }
+
+    public void setInputFieldNames(String... fieldNames) {
+        job.setStrings(MongoConfiguration.INPUT_FIELD_NAMES_PROPERTY, fieldNames);
+    }
+
+    public String getPrimaryKeyField() {
+        return job.get(PRIMARY_KEY_FIELD);
+    }
+
+    public void setPrimaryKeyField(String key) {
+        job.set(PRIMARY_KEY_FIELD, key);
     }
 
     public void setNumChunks(int numChunks) {
@@ -101,24 +103,6 @@ public class MongoConfiguration {
 
     public int getNumChunks() {
         return job.getInt(NUM_CHUNKS, 10);
-    }
-
-    public void setMinId(long id) {
-        job.setLong(MIN_ID, id);
-    }
-
-    public Long getMinId() {
-        if (job.get(MIN_ID) == null) { return null; }
-        return job.getLong(MIN_ID, -1);
-    }
-
-    public void setMaxId(long id) {
-        job.setLong(MAX_ID, id);
-    }
-
-    public Long getMaxId() {
-        if (job.get(MAX_ID) == null) { return null; }
-        return job.getLong(MAX_ID, -1);
     }
 }
 

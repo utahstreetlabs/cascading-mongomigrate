@@ -7,11 +7,19 @@ package cascading.mongomigrate.hadoop;
 
 import cascading.tuple.Tuple;
 import org.apache.hadoop.io.BytesWritable;
-import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.WritableUtils;
 import org.apache.hadoop.mapred.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.mongodb.BasicDBList;
+import com.mongodb.BasicDBObject;
+import com.mongodb.DB;
+import com.mongodb.DBCollection;
+import com.mongodb.DBCursor;
+import com.mongodb.DBObject;
+import com.mongodb.Mongo;
+import org.bson.types.ObjectId;
 
 import java.io.DataInput;
 import java.io.DataOutput;
@@ -20,78 +28,46 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.*;
 
-public class MongoInputFormat implements InputFormat<LongWritable, TupleWrapper> {
+public class MongoInputFormat implements InputFormat<BytesWritable, TupleWrapper> {
+    private static final int OID_BYTES = 12;
 
     private static final Logger LOG = LoggerFactory.getLogger(MongoInputFormat.class);
 
-    public static class DBRecordReader implements RecordReader<LongWritable, TupleWrapper> {
+    public static class MongoRecordReader implements RecordReader<BytesWritable, TupleWrapper> {
 
-        private ResultSet results;
+
+        private MongoConfiguration conf;
+        private DBCursor cursor;
         private Statement statement;
-        private Connection connection;
-        private DBInputSplit split;
+        private Mongo mongo;
+        private MongoInputSplit split;
         private long pos = 0;
+        private String[] fieldNames;
 
-        protected DBRecordReader(DBInputSplit split, JobConf job) throws IOException {
-            try {
-                this.split = split;
-                MongoConfiguration conf = new MongoConfiguration(job);
-                connection = conf.getConnection();
-
-                statement = connection
-                    .createStatement(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
-
-                //statement.setFetchSize(Integer.MIN_VALUE);
-                String query = getSelectQuery(conf, split);
-                LOG.info("Running query: " + query);
-                try {
-                    results = statement.executeQuery(query);
-                } catch (SQLException exception) {
-                    LOG.error("unable to execute select query: " + query, exception);
-                    throw new IOException("unable to execute select query: " + query, exception);
-                }
-            } catch (SQLException e) {
-                throw new RuntimeException(e);
-            }
+        protected MongoRecordReader(MongoInputSplit split, JobConf job) throws IOException {
+            this.split = split;
+            conf = new MongoConfiguration(job);
+            fieldNames = conf.getInputFieldNames();
+            cursor = executeQuery(conf.getDB(), conf, split);
         }
 
-        public static <T> String join(T[] arr, String sep) {
-            String ret = "";
-            for (int i = 0; i < arr.length; i++) {
-                ret = ret + arr[i];
-                if (i < arr.length - 1) {
-                    ret = ret + sep;
-                }
+        protected DBCursor executeQuery(DB db, MongoConfiguration conf, MongoInputSplit split) {
+            BasicDBObject query = new BasicDBObject(conf.getPrimaryKeyField(),
+              new BasicDBObject("$gte", new ObjectId(split.startId.getBytes())).append("$lt", new ObjectId(split.endId.getBytes())));
+            BasicDBObject keys = new BasicDBObject();
+            for (String key : conf.getInputFieldNames()) {
+                keys.put(key, 1);
             }
-            return ret;
-        }
-
-        protected String getSelectQuery(MongoConfiguration conf, DBInputSplit split) {
-            StringBuilder query = new StringBuilder();
-            query.append("SELECT ");
-            query.append(join(conf.getInputColumnNames(), ","));
-            query.append(" FROM ");
-            query.append(conf.getInputTableName());
-            query.append(" WHERE ");
-            query.append(split.primaryKeyColumn + ">=" + split.startId);
-            query.append(" AND ");
-            query.append(split.primaryKeyColumn + "<" + split.endId);
-            return query.toString();
+            return db.getCollection(conf.getInputCollectionName()).find(query, keys);
         }
 
         public void close() throws IOException {
-            try {
-                results.close();
-                statement.close();
-                connection.close();
-            } catch (SQLException exception) {
-                throw new IOException("unable to commit and close", exception);
-            }
+            conf.getMongo().close();
         }
 
         /** {@inheritDoc} */
-        public LongWritable createKey() {
-            return new LongWritable();
+        public BytesWritable createKey() {
+            return new BytesWritable(new byte[OID_BYTES]);
         }
 
         /** {@inheritDoc} */
@@ -110,52 +86,51 @@ public class MongoInputFormat implements InputFormat<LongWritable, TupleWrapper>
         }
 
         /** {@inheritDoc} */
-        public boolean next(LongWritable key, TupleWrapper value) throws IOException {
-            try {
-                if (!results.next()) {
-                    return false;
-                }
-                key.set(pos + split.startId);
-
-                value.tuple = new Tuple();
-
-                for (int i = 0; i < results.getMetaData().getColumnCount(); i++) {
-                    Object o = results.getObject(i + 1);
-                    if (o instanceof byte[]) {
-                        o = new BytesWritable((byte[]) o);
-                    } else if (o instanceof BigInteger) {
-                        o = ((BigInteger) o).longValue();
-                    } else if (o instanceof BigDecimal) {
-                        o = ((BigDecimal) o).doubleValue();
-                    }
-                    try {
-                        value.tuple.add(o);
-                    } catch (Throwable t) {
-                        LOG.info("WTF: " + o.toString() + o.getClass().toString());
-                        throw new RuntimeException(t);
-                    }
-                }
-                pos++;
-            } catch (SQLException exception) {
-                throw new IOException("unable to get next value", exception);
+        public boolean next(BytesWritable key, TupleWrapper value) throws IOException {
+            if (!cursor.hasNext()) {
+                return false;
             }
+            DBObject curr = cursor.next();
+            key.set(((ObjectId) curr.get(split.primaryKeyField)).toByteArray(), 0, OID_BYTES);
+
+            value.tuple = new Tuple();
+
+            for (String name : fieldNames) {
+                Object o = curr.get(name);
+                if (o instanceof byte[]) {
+                    o = new BytesWritable((byte[]) o);
+                } else if (o instanceof BigInteger) {
+                    o = ((BigInteger) o).longValue();
+                } else if (o instanceof BigDecimal) {
+                    o = ((BigDecimal) o).doubleValue();
+                }
+                try {
+                    value.tuple.add(o);
+                } catch (Throwable t) {
+                    LOG.info("WTF: " + o.toString() + o.getClass().toString());
+                    throw new RuntimeException(t);
+                }
+            }
+            pos++;
             return true;
         }
     }
 
-    protected static class DBInputSplit implements InputSplit {
+    protected static class MongoInputSplit implements InputSplit {
 
-        public long endId = 0;
-        public long startId = 0;
-        public String primaryKeyColumn;
+        public BytesWritable startId = null;
+        public BytesWritable endId = null;
+        public String primaryKeyField;
+        private long length;
 
-        public DBInputSplit() {
+        public MongoInputSplit() {
         }
 
-        public DBInputSplit(long start, long end, String primaryKeyColumn) {
+        public MongoInputSplit(BytesWritable start, BytesWritable end, String primaryKeyField, long length) {
             startId = start;
             endId = end;
-            this.primaryKeyColumn = primaryKeyColumn;
+            this.primaryKeyField = primaryKeyField;
+            length = length;
         }
 
         public String[] getLocations() throws IOException {
@@ -163,105 +138,90 @@ public class MongoInputFormat implements InputFormat<LongWritable, TupleWrapper>
         }
 
         public long getLength() throws IOException {
-            return endId - startId;
+            return length;
         }
 
         public void readFields(DataInput input) throws IOException {
-            startId = input.readLong();
-            endId = input.readLong();
-            primaryKeyColumn = WritableUtils.readString(input);
+            startId = new BytesWritable(new byte[OID_BYTES]);
+            startId.readFields(input);
+            endId = new BytesWritable(new byte[OID_BYTES]);
+            endId.readFields(input);
+            primaryKeyField = WritableUtils.readString(input);
         }
 
         public void write(DataOutput output) throws IOException {
-            output.writeLong(startId);
-            output.writeLong(endId);
-            WritableUtils.writeString(output, primaryKeyColumn);
+            startId.write(output);
+            endId.write(output);
+            WritableUtils.writeString(output, primaryKeyField);
         }
     }
 
-    public RecordReader<LongWritable, TupleWrapper> getRecordReader(InputSplit split, JobConf job,
+    public RecordReader<BytesWritable, TupleWrapper> getRecordReader(InputSplit split, JobConf job,
         Reporter reporter) throws IOException {
-        return new DBRecordReader((DBInputSplit) split, job);
+        return new MongoRecordReader((MongoInputSplit) split, job);
     }
 
-    private long getMaxId(MongoConfiguration conf, Connection conn, String tableName, String col) {
-        if (conf.getMaxId() != null) {
-            return conf.getMaxId();
-        }
-        try {
-            PreparedStatement s =
-                conn.prepareStatement("SELECT MAX(" + col + ") FROM " + tableName);
-            ResultSet rs = s.executeQuery();
-            rs.next();
-            long ret = rs.getLong(1);
-            rs.close();
-            s.close();
-            return ret;
-        } catch (SQLException e) {
-            throw new RuntimeException(e);
-        }
+    private long getRangeCount(DBCollection collection, String field, ObjectId minId, ObjectId maxId) {
+        BasicDBObject query = new BasicDBObject();
+        query.put(field, new BasicDBObject("$gte", minId).append("$lt", maxId));
+        return collection.count(query);
     }
 
-    private long getMinId(MongoConfiguration conf, Connection conn, String tableName, String col) {
-        if (conf.getMinId() != null) {
-            return conf.getMinId();
-        }
-        try {
-            PreparedStatement s =
-                conn.prepareStatement("SELECT MIN(" + col + ") FROM " + tableName);
-            ResultSet rs = s.executeQuery();
-            rs.next();
-            long ret = rs.getLong(1);
-            rs.close();
-            s.close();
-            return ret;
-        } catch (SQLException e) {
-            throw new RuntimeException(e);
-        }
+    private BigInteger getMaxId(DBCollection collection, String field) {
+        ObjectId id = (ObjectId) collection.find().sort(new BasicDBObject(field, -1)).next().get(field);
+        return new BigInteger(id.toByteArray());
+    }
+
+    private BigInteger getMinId(DBCollection collection, String field) {
+        ObjectId id = (ObjectId) collection.find().sort(new BasicDBObject(field, 1)).next().get(field);
+        return new BigInteger(id.toByteArray());
     }
 
     public InputSplit[] getSplits(JobConf job, int ignored) throws IOException {
+        MongoConfiguration conf = new MongoConfiguration(job);
         try {
-            MongoConfiguration conf = new MongoConfiguration(job);
             int chunks = conf.getNumChunks();
-            Connection conn = conf.getConnection();
-            String primarykeycolumn = conf.getPrimaryKeyColumn();
-            long maxId = getMaxId(conf, conn, conf.getInputTableName(), conf.getPrimaryKeyColumn());
-            long minId = getMinId(conf, conn, conf.getInputTableName(), conf.getPrimaryKeyColumn());
-            long chunkSize = (maxId - minId + 1) / chunks + 1;
-            chunks = (int) ((maxId - minId + 1) / chunkSize) + 1;
+            DB db = conf.getDB();
+            DBCollection collection = db.getCollection(conf.getInputCollectionName());
+            String primaryKeyField = conf.getPrimaryKeyField();
+            BigInteger maxId = getMaxId(collection, primaryKeyField).add(BigInteger.ONE);
+            BigInteger minId = getMinId(collection, primaryKeyField);
+            BigInteger chunkSize = maxId.subtract(minId).add(BigInteger.ONE).
+                divide(BigInteger.valueOf(chunks).add(BigInteger.ONE));
+            chunks = maxId.subtract(minId).add(BigInteger.ONE).divide(chunkSize).intValue();
             InputSplit[] ret = new InputSplit[chunks];
 
-            long currId = minId;
+            BigInteger currId = minId;
             for (int i = 0; i < chunks; i++) {
-                long start = currId;
-                currId += chunkSize;
-                ret[i] = new DBInputSplit(start, Math.min(currId, maxId + 1), primarykeycolumn);
-            }
+                BigInteger start = currId;
+                currId = currId.add(chunkSize);
+                long splitSize = getRangeCount(
+                    collection, primaryKeyField, new ObjectId(start.toByteArray()), new ObjectId(currId.toByteArray()));
 
-            conn.close();
+                LOG.info(String.format("creating split %d of %d on %s of size %d; %s gte %s; %s lt %s",
+                    new Object[] { i + 1, chunks, conf.getInputCollectionName(), splitSize,
+                    primaryKeyField, new ObjectId(start.toByteArray()), primaryKeyField, new ObjectId(currId.toByteArray())}));
+
+                ret[i] = new MongoInputSplit(new BytesWritable(start.toByteArray()), new BytesWritable(currId.toByteArray()),
+                                             primaryKeyField, splitSize);
+            }
             return ret;
-        } catch (SQLException e) {
-            throw new RuntimeException(e);
+        } finally {
+            conf.getMongo().close();
         }
     }
 
-    public static void setInput(JobConf job, int numChunks, String databaseDriver, String username,
-        String pwd, String dburl, String tableName, String pkColumn, Long minId, Long maxId,
-        String... columnNames) {
+    public static void setInput(JobConf job, int numChunks, String host, int port, String username, String pwd,
+                                String dbName, String collectionName, String pkField,
+        String... fieldNames) {
         job.setInputFormat(MongoInputFormat.class);
 
         MongoConfiguration dbConf = new MongoConfiguration(job);
-        dbConf.configureDB(databaseDriver, dburl, username, pwd);
-        if (minId != null) {
-            dbConf.setMinId(minId.longValue());
-        }
-        if (maxId != null) {
-            dbConf.setMaxId(maxId.longValue());
-        }
-        dbConf.setInputTableName(tableName);
-        dbConf.setInputColumnNames(columnNames);
-        dbConf.setPrimaryKeyColumn(pkColumn);
+        dbConf.configureMongo(host, port, username, pwd);
+        dbConf.setDBName(dbName);
+        dbConf.setInputCollectionName(collectionName);
+        dbConf.setInputFieldNames(fieldNames);
+        dbConf.setPrimaryKeyField(pkField);
         dbConf.setNumChunks(numChunks);
     }
 }

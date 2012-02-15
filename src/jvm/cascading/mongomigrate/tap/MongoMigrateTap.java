@@ -30,25 +30,27 @@ public class MongoMigrateTap extends Tap {
     }
 
     public class MongoMigrateScheme extends Scheme {
-        String dbDriver;
-        String dbUrl;
+        String host;
+        int port;
         String username;
         String pwd;
-        String tableName;
-        String pkColumn;
-        String[] columnNames;
+        String dbName;
+        String collectionName;
+        String pkField;
+        String[] fieldNames;
         int numChunks;
         Options options;
 
-        public MongoMigrateScheme(int numChunks, String dbDriver, String dbUrl, String username, String pwd, String tableName, String pkColumn, String[] columnNames, Options options) {
-            super(new Fields(columnNames));
-            this.dbDriver = dbDriver;
-            this.dbUrl = dbUrl;
+        public MongoMigrateScheme(int numChunks, String host, int port, String username, String pwd, String dbName, String collectionName, String pkField, String[] fieldNames, Options options) {
+            super(new Fields(fieldNames));
+            this.host = host;
+            this.port = port;
             this.username = username;
             this.pwd = pwd;
-            this.tableName = tableName;
-            this.pkColumn = pkColumn;
-            this.columnNames = columnNames;
+            this.dbName = dbName;
+            this.collectionName = collectionName;
+            this.pkField = pkField;
+            this.fieldNames = fieldNames;
             this.numChunks = numChunks;
             this.options = options;
         }
@@ -58,7 +60,7 @@ public class MongoMigrateTap extends Tap {
             // a hack for MultiInputFormat to see that there is a child format
             FileInputFormat.setInputPaths( jc, getPath() );
 
-            MongoInputFormat.setInput(jc, numChunks, dbDriver, username, pwd, dbUrl, tableName, pkColumn, options.minId, options.maxId, columnNames);
+            MongoInputFormat.setInput(jc, numChunks, host, port, username, pwd, dbName, collectionName, pkField, fieldNames);
         }
 
         @Override
@@ -79,18 +81,18 @@ public class MongoMigrateTap extends Tap {
 
     String connectionUrl;
 
-    public MongoMigrateTap(int numChunks, String dbDriver, String dbUrl, String username, String pwd, String tableName, String pkColumn, String[] columnNames) {
-        this(numChunks, dbDriver, dbUrl, username, pwd, tableName, pkColumn, columnNames, new Options());
+    public MongoMigrateTap(int numChunks, String host, int port, String username, String pwd, String dbName, String collectionName, String pkField, String[] fieldNames) {
+        this(numChunks, host, port, username, pwd, dbName, collectionName, pkField, fieldNames, new Options());
     }
 
-    public MongoMigrateTap(int numChunks, String dbDriver, String dbUrl, String username, String pwd, String tableName, String pkColumn, String[] columnNames, Options options) {
-        setScheme(new MongoMigrateScheme(numChunks, dbDriver, dbUrl, username, pwd, tableName, pkColumn, columnNames, options));
-        this.connectionUrl = dbUrl;
+    public MongoMigrateTap(int numChunks, String host, int port, String username, String pwd, String dbName, String collectionName, String pkField, String[] fieldNames, Options options) {
+        setScheme(new MongoMigrateScheme(numChunks, host, port, username, pwd, dbName, collectionName, pkField, fieldNames, options));
+        connectionUrl = String.format("mongo:/%s:%d/%s/%s",  new Object[]{ host, port, dbName, connectionUrl } );
     }
 
     @Override
     public Path getPath() {
-        return new Path( "mongo:/" + connectionUrl.replaceAll( ":", "_" ) );
+        return new Path(connectionUrl);
     }
 
     @Override
