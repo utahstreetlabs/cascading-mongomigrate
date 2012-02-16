@@ -48,7 +48,8 @@ public class MongoInputFormat implements InputFormat<BytesWritable, TupleWrapper
             this.split = split;
             conf = new MongoConfiguration(job);
             fieldNames = conf.getInputFieldNames();
-            cursor = executeQuery(conf.getDB(), conf, split);
+            mongo = conf.getMongo();
+            cursor = executeQuery(conf.getDB(mongo), conf, split);
         }
 
         protected DBCursor executeQuery(DB db, MongoConfiguration conf, MongoInputSplit split) {
@@ -62,7 +63,7 @@ public class MongoInputFormat implements InputFormat<BytesWritable, TupleWrapper
         }
 
         public void close() throws IOException {
-            conf.getMongo().close();
+            mongo.close();
         }
 
         /** {@inheritDoc} */
@@ -179,9 +180,10 @@ public class MongoInputFormat implements InputFormat<BytesWritable, TupleWrapper
 
     public InputSplit[] getSplits(JobConf job, int ignored) throws IOException {
         MongoConfiguration conf = new MongoConfiguration(job);
+        Mongo mongo = conf.getMongo();
         try {
             int chunks = conf.getNumChunks();
-            DB db = conf.getDB();
+            DB db = conf.getDB(mongo);
             DBCollection collection = db.getCollection(conf.getInputCollectionName());
             String primaryKeyField = conf.getPrimaryKeyField();
             BigInteger maxId = getMaxId(collection, primaryKeyField).add(BigInteger.ONE);
@@ -207,7 +209,7 @@ public class MongoInputFormat implements InputFormat<BytesWritable, TupleWrapper
             }
             return ret;
         } finally {
-            conf.getMongo().close();
+            mongo.close();
         }
     }
 

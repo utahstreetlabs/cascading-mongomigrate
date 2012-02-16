@@ -57,8 +57,8 @@ public class MongoConfiguration {
         }
     }
 
-    public DB getDB() throws IOException {
-        DB db = getMongo().getDB(job.get(MongoConfiguration.INPUT_DB_NAME_PROPERTY));
+    public DB getDB(Mongo mongo) throws IOException {
+        DB db = mongo.getDB(job.get(MongoConfiguration.INPUT_DB_NAME_PROPERTY));
         String username = job.get(MongoConfiguration.USERNAME_PROPERTY);
         String password = job.get(MongoConfiguration.USERNAME_PROPERTY);
         if (username != null && password != null) db.authenticate(username, password.toCharArray());
