@@ -1,5 +1,12 @@
-cascading-dbmigrate
+cascading-mongomigrate
 ===================
+
+TODO: update all of this
+
+GOTCHAS:
+
+- (:distinct false) if using arrays/lists directly, since cascalog can't compare them
+
 
 cascading-dbmigrate makes it easy to run Cascading flows on sql tables with a
 primary key of an int or a long. We use it at BackType to migrate data from our
