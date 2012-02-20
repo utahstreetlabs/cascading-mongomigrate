@@ -1,5 +1,5 @@
 /**
- Copyright 2010 BackType, 2012 Utah Street Labs
+ Copyright 2012 Utah Street Labs
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
  */
@@ -8,11 +8,15 @@ package cascading.mongomigrate.hadoop;
 
 import org.apache.hadoop.mapred.JobConf;
 
+import com.mongodb.BasicDBObject;
 import com.mongodb.DB;
 import com.mongodb.Mongo;
+import com.mongodb.util.JSON;
 
 import java.io.IOException;
 import java.net.UnknownHostException;
+import java.util.HashMap;
+import java.util.Map;
 
 public class MongoConfiguration {
 
@@ -21,6 +25,7 @@ public class MongoConfiguration {
     public static final String USERNAME_PROPERTY = "mapred.mongo.username";
     public static final String PASSWORD_PROPERTY = "mapred.mongo.password";
     public static final String INPUT_DB_NAME_PROPERTY = "mapred.mongo.input.db.name";
+    public static final String QUERY_PROPERTY = "mapred.mongo.input.query";
     public static final String INPUT_COLLECTION_NAME_PROPERTY = "mapred.mongo.input.collection.name";
     public static final String INPUT_FIELD_NAMES_PROPERTY = "mapred.mongo.input.field.names";
     public static final String PRIMARY_KEY_FIELD = "mapred.mongo.primary.key.name";
@@ -79,6 +84,27 @@ public class MongoConfiguration {
 
     public void setInputCollectionName(String collectionName) {
         job.set(MongoConfiguration.INPUT_COLLECTION_NAME_PROPERTY, collectionName);
+    }
+
+    public BasicDBObject getQuery(){
+        return (BasicDBObject) JSON.parse(job.get(MongoConfiguration.QUERY_PROPERTY));
+    }
+
+    private HashMap toHashMaps(Map query) {
+      HashMap r = new HashMap();
+      for (Object o : query.entrySet()) {
+        Map.Entry e = (Map.Entry) o;
+        Object v = e.getValue();
+        if (v instanceof Map) {
+          v = toHashMaps((Map) v);
+        }
+        r.put(e.getKey(), v);
+      }
+      return r;
+    }
+
+    public void setQuery(Map query) {
+        job.set(MongoConfiguration.QUERY_PROPERTY, JSON.serialize(toHashMaps(query)));
     }
 
     public String[] getInputFieldNames() {

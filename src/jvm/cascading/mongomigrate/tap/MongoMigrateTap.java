@@ -1,5 +1,5 @@
 /**
-Copyright 2010 BackType, 2012 Utah Street Labs
+Copyright 2012 Utah Street Labs
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
 */
@@ -15,13 +15,15 @@ import cascading.tuple.Tuple;
 import cascading.tuple.TupleEntry;
 import cascading.tuple.TupleEntryCollector;
 import cascading.tuple.TupleEntryIterator;
-import java.io.IOException;
+
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapred.FileInputFormat;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.OutputCollector;
-import java.io.Serializable;
 
+import java.io.IOException;
+import java.io.Serializable;
+import java.util.Map;
 
 public class MongoMigrateTap extends Tap {
     public static class Options implements Serializable {
@@ -36,12 +38,13 @@ public class MongoMigrateTap extends Tap {
         String pwd;
         String dbName;
         String collectionName;
+        Map query;
         String pkField;
         String[] fieldNames;
         int numChunks;
         Options options;
 
-        public MongoMigrateScheme(int numChunks, String host, int port, String username, String pwd, String dbName, String collectionName, String pkField, String[] fieldNames, Options options) {
+        public MongoMigrateScheme(int numChunks, String host, int port, String username, String pwd, String dbName, String collectionName, Map query, String pkField, String[] fieldNames, Options options) {
             super(new Fields(fieldNames));
             this.host = host;
             this.port = port;
@@ -49,6 +52,7 @@ public class MongoMigrateTap extends Tap {
             this.pwd = pwd;
             this.dbName = dbName;
             this.collectionName = collectionName;
+            this.query = query;
             this.pkField = pkField;
             this.fieldNames = fieldNames;
             this.numChunks = numChunks;
@@ -58,9 +62,9 @@ public class MongoMigrateTap extends Tap {
         @Override
         public void sourceInit(Tap tap, JobConf jc) throws IOException {
             // a hack for MultiInputFormat to see that there is a child format
-            FileInputFormat.setInputPaths( jc, getPath() );
+            FileInputFormat.setInputPaths(jc, getPath());
 
-            MongoInputFormat.setInput(jc, numChunks, host, port, username, pwd, dbName, collectionName, pkField, fieldNames);
+            MongoInputFormat.setInput(jc, numChunks, host, port, username, pwd, dbName, collectionName, query, pkField, fieldNames);
         }
 
         @Override
@@ -81,12 +85,12 @@ public class MongoMigrateTap extends Tap {
 
     String connectionUrl;
 
-    public MongoMigrateTap(int numChunks, String host, int port, String username, String pwd, String dbName, String collectionName, String pkField, String[] fieldNames) {
-        this(numChunks, host, port, username, pwd, dbName, collectionName, pkField, fieldNames, new Options());
+    public MongoMigrateTap(int numChunks, String host, int port, String username, String pwd, String dbName, String collectionName, Map query, String pkField, String[] fieldNames) {
+        this(numChunks, host, port, username, pwd, dbName, collectionName, query, pkField, fieldNames, new Options());
     }
 
-    public MongoMigrateTap(int numChunks, String host, int port, String username, String pwd, String dbName, String collectionName, String pkField, String[] fieldNames, Options options) {
-        setScheme(new MongoMigrateScheme(numChunks, host, port, username, pwd, dbName, collectionName, pkField, fieldNames, options));
+    public MongoMigrateTap(int numChunks, String host, int port, String username, String pwd, String dbName, String collectionName, Map query, String pkField, String[] fieldNames, Options options) {
+        setScheme(new MongoMigrateScheme(numChunks, host, port, username, pwd, dbName, collectionName, query, pkField, fieldNames, options));
         connectionUrl = String.format("mongo:/%s:%d/%s/%s",  new Object[]{ host, port, dbName, connectionUrl } );
     }
 
