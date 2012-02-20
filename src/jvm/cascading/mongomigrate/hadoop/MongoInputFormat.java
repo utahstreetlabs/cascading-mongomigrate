@@ -27,6 +27,7 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.*;
+import java.util.Map;
 
 public class MongoInputFormat implements InputFormat<BytesWritable, TupleWrapper> {
     private static final int OID_BYTES = 12;
@@ -43,22 +44,26 @@ public class MongoInputFormat implements InputFormat<BytesWritable, TupleWrapper
         private MongoInputSplit split;
         private long pos = 0;
         private String[] fieldNames;
+        private BasicDBObject query;
 
         protected MongoRecordReader(MongoInputSplit split, JobConf job) throws IOException {
             this.split = split;
             conf = new MongoConfiguration(job);
             fieldNames = conf.getInputFieldNames();
             mongo = conf.getMongo();
-            cursor = executeQuery(conf.getDB(mongo), conf, split);
+            query = conf.getQuery();
+            cursor = executeQuery(conf.getDB(mongo), conf, split, query);
         }
 
-        protected DBCursor executeQuery(DB db, MongoConfiguration conf, MongoInputSplit split) {
-            BasicDBObject query = new BasicDBObject(conf.getPrimaryKeyField(),
-              new BasicDBObject("$gte", new ObjectId(split.startId.getBytes())).append("$lt", new ObjectId(split.endId.getBytes())));
+        protected DBCursor executeQuery(DB db, MongoConfiguration conf, MongoInputSplit split, BasicDBObject query) {
+            query.append(conf.getPrimaryKeyField(),
+                         new BasicDBObject("$gte", new ObjectId(split.startId.getBytes())).
+                         append("$lt", new ObjectId(split.endId.getBytes())));
             BasicDBObject keys = new BasicDBObject();
             for (String key : conf.getInputFieldNames()) {
                 keys.put(key, 1);
             }
+            LOG.info(String.format("Executing query %s for keys %s", new Object[] { query, keys }));
             return db.getCollection(conf.getInputCollectionName()).find(query, keys);
         }
 
@@ -162,32 +167,32 @@ public class MongoInputFormat implements InputFormat<BytesWritable, TupleWrapper
         return new MongoRecordReader((MongoInputSplit) split, job);
     }
 
-    private long getRangeCount(DBCollection collection, String field, ObjectId minId, ObjectId maxId) {
-        BasicDBObject query = new BasicDBObject();
+    private long getRangeCount(DBCollection collection, String field, ObjectId minId, ObjectId maxId, BasicDBObject query) {
         query.put(field, new BasicDBObject("$gte", minId).append("$lt", maxId));
         return collection.count(query);
     }
 
-    private BigInteger getMaxId(DBCollection collection, String field) {
-        ObjectId id = (ObjectId) collection.find().sort(new BasicDBObject(field, -1)).next().get(field);
+    private BigInteger getMaxId(DBCollection collection, String field, BasicDBObject query) {
+        ObjectId id = (ObjectId) collection.find(query).sort(new BasicDBObject(field, -1)).next().get(field);
         return new BigInteger(id.toByteArray());
     }
 
-    private BigInteger getMinId(DBCollection collection, String field) {
-        ObjectId id = (ObjectId) collection.find().sort(new BasicDBObject(field, 1)).next().get(field);
+    private BigInteger getMinId(DBCollection collection, String field, BasicDBObject query) {
+        ObjectId id = (ObjectId) collection.find(query).sort(new BasicDBObject(field, 1)).next().get(field);
         return new BigInteger(id.toByteArray());
     }
 
     public InputSplit[] getSplits(JobConf job, int ignored) throws IOException {
         MongoConfiguration conf = new MongoConfiguration(job);
         Mongo mongo = conf.getMongo();
+        BasicDBObject query = conf.getQuery();
         try {
             int chunks = conf.getNumChunks();
             DB db = conf.getDB(mongo);
             DBCollection collection = db.getCollection(conf.getInputCollectionName());
             String primaryKeyField = conf.getPrimaryKeyField();
-            BigInteger maxId = getMaxId(collection, primaryKeyField).add(BigInteger.ONE);
-            BigInteger minId = getMinId(collection, primaryKeyField);
+            BigInteger maxId = getMaxId(collection, primaryKeyField, query).add(BigInteger.ONE);
+            BigInteger minId = getMinId(collection, primaryKeyField, query);
             BigInteger chunkSize = maxId.subtract(minId).add(BigInteger.ONE).
                 divide(BigInteger.valueOf(chunks).add(BigInteger.ONE));
             chunks = maxId.subtract(minId).add(BigInteger.ONE).divide(chunkSize).intValue();
@@ -198,9 +203,9 @@ public class MongoInputFormat implements InputFormat<BytesWritable, TupleWrapper
                 BigInteger start = currId;
                 currId = currId.add(chunkSize);
                 long splitSize = getRangeCount(
-                    collection, primaryKeyField, new ObjectId(start.toByteArray()), new ObjectId(currId.toByteArray()));
+                  collection, primaryKeyField, new ObjectId(start.toByteArray()), new ObjectId(currId.toByteArray()), query);
 
-                LOG.info(String.format("creating split %d of %d on %s of size %d; %s gte %s; %s lt %s",
+                LOG.info(String.format("Creating split %d of %d on %s of size %d; %s gte %s; %s lt %s",
                     new Object[] { i + 1, chunks, conf.getInputCollectionName(), splitSize,
                     primaryKeyField, new ObjectId(start.toByteArray()), primaryKeyField, new ObjectId(currId.toByteArray())}));
 
@@ -214,7 +219,7 @@ public class MongoInputFormat implements InputFormat<BytesWritable, TupleWrapper
     }
 
     public static void setInput(JobConf job, int numChunks, String host, int port, String username, String pwd,
-                                String dbName, String collectionName, String pkField,
+                                String dbName, String collectionName, Map query, String pkField,
         String... fieldNames) {
         job.setInputFormat(MongoInputFormat.class);
 
@@ -222,6 +227,7 @@ public class MongoInputFormat implements InputFormat<BytesWritable, TupleWrapper
         dbConf.configureMongo(host, port, username, pwd);
         dbConf.setDBName(dbName);
         dbConf.setInputCollectionName(collectionName);
+        dbConf.setQuery(query);
         dbConf.setInputFieldNames(fieldNames);
         dbConf.setPrimaryKeyField(pkField);
         dbConf.setNumChunks(numChunks);
