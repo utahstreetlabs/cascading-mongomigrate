@@ -11,6 +11,7 @@ import org.apache.hadoop.mapred.JobConf;
 import com.mongodb.BasicDBObject;
 import com.mongodb.DB;
 import com.mongodb.Mongo;
+import com.mongodb.ReadPreference;
 import com.mongodb.util.JSON;
 
 import java.io.IOException;
@@ -56,7 +57,9 @@ public class MongoConfiguration {
 
     public Mongo getMongo() throws IOException {
         try {
-            return new Mongo(job.get(MongoConfiguration.HOST_PROPERTY), job.getInt(MongoConfiguration.PORT_PROPERTY, 27017));
+            Mongo mongo = new Mongo(job.get(MongoConfiguration.HOST_PROPERTY), job.getInt(MongoConfiguration.PORT_PROPERTY, 27017));
+            mongo.slaveOk();
+            return mongo;
         } catch (UnknownHostException e) {
             throw new IOException("unable to connect to mongo", e);
         }
