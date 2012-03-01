@@ -1,18 +1,16 @@
 cascading-mongomigrate
 ===================
 
-TODO: update all of this
+cascading-mongomigrate makes it easy to run Cascading flows on MongoDB
+collections. It currently employs a naive and mostly broken splitting
+strategy by partitioning ObjectIds from the collection into equal
+ranges. Because ObjectIds are UUIDS, this will result in chunks of
+different and arbitrary size. Fortunately, because a timestamp is used
+for the most significant bits of the ObjectId, this will frequently be
+a reasonable thing to do. We use it at Copious to migrate data from our
+MongoDB instances to HDFS.
 
-GOTCHAS:
-
-- (:distinct false) if using arrays/lists directly, since cascalog can't compare them
-
-
-cascading-dbmigrate makes it easy to run Cascading flows on sql tables with a
-primary key of an int or a long. We use it at BackType to migrate data from our
-databases to HDFS.
-
-Cascading-DBMigrate is available [on Clojars](http://clojars.org/backtype/cascading-dbmigrate).
+Cascading-MongoMigrate is available [on Clojars](http://clojars.org/cascading-mongomigrate).
 
 Usage
 -----
@@ -20,22 +18,22 @@ Usage
 To read data from a database in a Cascading flow, use DBMigrateTap.
 DBMigrateTap's constructor has the following signature:
 
-    DBMigrateTap(
-      int numChunks,        // The number of splits to create of the database.
-                            // This will correspond to the number of mappers
-                            // created to read the database.
-      String dbDriver,      // For example, "com.mysql.jdbc.Driver"
-      String dbUrl,         // For example, "jdbc:mysql://localhost:3306/mydb"
-      String username,      // Username to connect to your database.
-      String pwd,           // Password to connect to your database.
-      String tableName,     // The table to read during the flow.
-      String pkColumn,      // The name of the primary key column of the table.
-      String[] columnNames, // The names of the columns to read into the flow.
-      Options ops           // Optional, can provide min/max values to read.
+    MongoMigrateTap(
+      int numChunks,          // The number of splits to create of the database.
+                              // This will correspond to the number of mappers
+                              // created to read the database.
+      String host,            // Mongo host
+      int port,               // Mongo port
+      String username,        // Username to connect to your database.
+      String pwd,             // Password to connect to your database.
+      String collectionName,  // The collection to read during the flow.
+      String pkColumn,        // The name of the ObjectId column of the table.
+      String[] fieldNames,    // The names of the columns to read into the flow.
+      Options options         // Optional, unused for now
     )
 
-The tap will emit tuples containing one field for each column read, the field
-names being the column names.
+The tap will emit tuples containing one value for each field read, the value
+names being the field names.
 
 Examples
 --------
@@ -43,42 +41,45 @@ Examples
 ### Cascalog
 
 ```clojure
- (defn db-range [min max]
-   (let [opts (new cascading.dbmigrate.tap.DBMigrateTap$Options)]
-     (set! (. opts :minId) min))
-     (set! (. opts :maxId) max))
-     opts))
+ (defn mongo []
+   (MongoMigrateTap.
+    4
+    "127.0.0.1"
+    27017
+    "hungryman"
+    "gimmesome"
+    "breakfast_db"
+    "hams"
+    "_id"
+    (str-arr ["weight" "color" "salt_levels"])
+    (cascading.mongomigrate.tap.MongoMigrateTap$Options.)))
 
- (defn db-tap [table]
-   (cascading.dbmigrate.tap.DBMigrateTap.
-     1
-     "com.mysql.jdbc.Driver"
-     "jdbc:mysql://localhost:3306/mydb"
-     "root"
-     ""
-     table
-     "id"
-     (into-array ["id" "name"])
-     (db-range 1 100))) ;; Only load first 100 records
-
-
- (?<- (stdout)
-      [?id ?name]
-      ((db-tap "users") ?id ?name))
 ```
+
+Gotchas
+-------
+
+If you're using cascalog, be sure to use `(:distinct false)` in any query that uses
+embedded arrays directly, since cascalog can't compare them.
+
 
 Building
 --------
 
-To build cascading-dbmigrate, follow these instructions:
+To build cascading-mongomigrate, run:
 
-1. Set `HADOOP_HOME` environment variable to the root directory of your hadoop distribution.
-2. Set `CASCADING_HOME` environment variable to the root directory of your cascading distribution.
-3. `ant jar`
+    lein jar
 
-This will produce a single jar called `cascading_dbmigrate.jar` in the `build/`
-directory.
+This will produce a single jar called `cascading-mongomigrate-<version>.jar`
 
 
-Thanks to Chris Wensel for his help in developing this project.
+TODO
+----
+
+- discover/connect to slave replica sets automatically
+- discover sharding strategy automatically and use it to create splits
+
+
+
+Thanks to https://github.com/backtype/cascading-dbmigrate for providing the starting point for this library.
 

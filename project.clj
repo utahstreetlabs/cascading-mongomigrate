@@ -9,4 +9,5 @@
                                riffle/riffle]]
                  [org.mongodb/mongo-java-driver "2.7.2"]
                  [thirdparty/jgrapht-jdk1.6 "0.8.1"]]
-  :dev-dependencies [[org.apache.hadoop/hadoop-core "0.20.2-dev"]])
+  :dev-dependencies [[org.apache.hadoop/hadoop-core "0.20.2-dev"]
+                     [lein-clojars "0.7.0"]])
