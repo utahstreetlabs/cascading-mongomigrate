@@ -3,12 +3,12 @@ cascading-mongomigrate
 
 cascading-mongomigrate makes it easy to run Cascading flows on MongoDB
 collections. It currently employs a naive and mostly broken splitting
-strategy by partitioning ObjectIds from the collection into equal
+strategy of partitioning ObjectIds from the collection into equal
 ranges. Because ObjectIds are UUIDS, this will result in chunks of
 different and arbitrary size. Fortunately, because a timestamp is used
 for the most significant bits of the ObjectId, this will frequently be
-a reasonable thing to do. We use it at Copious to migrate data from our
-MongoDB instances to HDFS.
+a not-completely-insane thing to do. We use it at Copious to migrate data
+from our MongoDB instances to HDFS.
 
 Cascading-MongoMigrate is available [on Clojars](http://clojars.org/cascading-mongomigrate).
 
@@ -60,7 +60,7 @@ Gotchas
 -------
 
 If you're using cascalog, be sure to use `(:distinct false)` in any query that uses
-embedded arrays directly, since cascalog can't compare them.
+embedded arrays directly, since cascalog can't compare vectors with eachother.
 
 
 Building
@@ -75,6 +75,9 @@ This will produce a single jar called `cascading-mongomigrate-<version>.jar`
 
 TODO
 ----
+
+A much better splitting strategy would involve introspecting a collection's
+sharding strategy using it to inform the splits:
 
 - discover/connect to slave replica sets automatically
 - discover sharding strategy automatically and use it to create splits
