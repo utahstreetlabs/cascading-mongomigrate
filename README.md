@@ -33,7 +33,10 @@ DBMigrateTap's constructor has the following signature:
     )
 
 The tap will emit tuples containing one value for each field read, the value
-names being the field names.
+names being the field names. Note that there is currently no special handling for
+embedded documents - these values will be read into the flow as arrays or maps.
+Newer versions of Cascalog support serializing these arrays and maps out of the
+box.
 
 Examples
 --------
