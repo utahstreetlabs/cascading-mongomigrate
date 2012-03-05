@@ -2,5 +2,5 @@ cascading-mongomigrate
 Copyright 2012 Utah Street Labs
 
 Portions of this software were developed as part of
-cascading-dbmigrate (https://github.com/backtype/cascading-dbmigrate)
+cascading-dbmigrate (https://github.com/cascading/cascading-dbmigrate)
 by BackType (http://www.backtype.com).

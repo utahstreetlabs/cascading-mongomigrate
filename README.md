@@ -84,5 +84,5 @@ sharding strategy using it to inform the splits:
 
 
 
-Thanks to https://github.com/backtype/cascading-dbmigrate for providing the starting point for this library.
+Thanks to https://github.com/cascading/cascading-dbmigrate for providing the starting point for this library.
 
