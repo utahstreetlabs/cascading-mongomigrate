@@ -63,7 +63,27 @@ Gotchas
 -------
 
 If you're using cascalog, be sure to use `(:distinct false)` in any query that uses
-embedded arrays directly, since cascalog can't compare vectors with eachother.
+embedded arrays directly, since cascalog can't necessarily compare seqs with eachother: from @sritchie:
+
+    vectors actually are comparable inside of Fields, but Seqs aren't (necessarily). So something like this will fail:
+
+    (defn bundle [& args]
+        [args])
+
+    (?<- (stdout)
+           [?coll]
+           (src ?a ?b ?c)
+           (bundle ?a ?b ?c :> ?coll))
+
+    While this will succeed:
+
+    (defn bundle [& args]
+        [(vec args)])
+
+    (?<- (stdout)
+           [?coll]
+           (src ?a ?b ?c)
+           (bundle ?a ?b ?c :> ?coll))
 
 
 Building
