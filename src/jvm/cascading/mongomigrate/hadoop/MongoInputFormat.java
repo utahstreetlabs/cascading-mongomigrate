@@ -194,8 +194,8 @@ public class MongoInputFormat implements InputFormat<BytesWritable, TupleWrapper
             BigInteger maxId = getMaxId(collection, primaryKeyField, query).add(BigInteger.ONE);
             BigInteger minId = getMinId(collection, primaryKeyField, query);
             BigInteger chunkSize = maxId.subtract(minId).add(BigInteger.ONE).
-                divide(BigInteger.valueOf(chunks).add(BigInteger.ONE));
-            chunks = maxId.subtract(minId).add(BigInteger.ONE).divide(chunkSize).intValue();
+                divide(BigInteger.valueOf(chunks)).add(BigInteger.ONE);
+            chunks = maxId.subtract(minId).add(BigInteger.ONE).divide(chunkSize).add(BigInteger.ONE).intValue();
             InputSplit[] ret = new InputSplit[chunks];
 
             BigInteger currId = minId;
